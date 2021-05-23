@@ -7,9 +7,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -22,11 +25,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.ParentDataModifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.danielrampelt.schedule.ui.theme.WeekScheduleTheme
 import java.time.LocalDate
@@ -161,16 +166,105 @@ private class EventDataModifier(
 
 private fun Modifier.eventData(event: Event) = this.then(EventDataModifier(event))
 
+private val DayFormatter = DateTimeFormatter.ofPattern("EE, MMM d")
+
+@Composable
+fun BasicDayHeader(
+    day: LocalDate,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = day.format(DayFormatter),
+        textAlign = TextAlign.Center,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(4.dp)
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun BasicDayHeaderPreview() {
+    WeekScheduleTheme {
+        BasicDayHeader(day = LocalDate.now())
+    }
+}
+
+@Composable
+fun ScheduleHeader(
+    minDate: LocalDate,
+    maxDate: LocalDate,
+    dayWidth: Dp,
+    modifier: Modifier = Modifier,
+    dayHeader: @Composable (day: LocalDate) -> Unit = { BasicDayHeader(day = it) },
+) {
+    Row(modifier = modifier) {
+        val numDays = ChronoUnit.DAYS.between(minDate, maxDate).toInt() + 1
+        repeat(numDays) { i ->
+            Box(modifier = Modifier.width(dayWidth)) {
+                dayHeader(minDate.plusDays(i.toLong()))
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun ScheduleHeaderPreview() {
+    WeekScheduleTheme {
+        ScheduleHeader(
+            minDate = LocalDate.now(),
+            maxDate = LocalDate.now().plusDays(5),
+            dayWidth = 256.dp,
+        )
+    }
+}
+
 @Composable
 fun Schedule(
     events: List<Event>,
     modifier: Modifier = Modifier,
     eventContent: @Composable (event: Event) -> Unit = { BasicEvent(event = it) },
+    dayHeader: @Composable (day: LocalDate) -> Unit = { BasicDayHeader(day = it) },
     minDate: LocalDate = events.minByOrNull(Event::start)!!.start.toLocalDate(),
     maxDate: LocalDate = events.maxByOrNull(Event::end)!!.end.toLocalDate(),
 ) {
-    val hourHeight = 64.dp
     val dayWidth = 256.dp
+    val verticalScrollState = rememberScrollState()
+    val horizontalScrollState = rememberScrollState()
+    Column(modifier = modifier) {
+        ScheduleHeader(
+            minDate = minDate,
+            maxDate = maxDate,
+            dayWidth = dayWidth,
+            dayHeader = dayHeader,
+            modifier = Modifier
+                .horizontalScroll(horizontalScrollState)
+        )
+        BasicSchedule(
+            events = events,
+            eventContent = eventContent,
+            minDate = minDate,
+            maxDate = maxDate,
+            dayWidth = dayWidth,
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(verticalScrollState)
+                .horizontalScroll(horizontalScrollState)
+        )
+    }
+}
+
+@Composable
+fun BasicSchedule(
+    events: List<Event>,
+    modifier: Modifier = Modifier,
+    eventContent: @Composable (event: Event) -> Unit = { BasicEvent(event = it) },
+    minDate: LocalDate = events.minByOrNull(Event::start)!!.start.toLocalDate(),
+    maxDate: LocalDate = events.maxByOrNull(Event::end)!!.end.toLocalDate(),
+    dayWidth: Dp,
+) {
+    val hourHeight = 64.dp
     val numDays = ChronoUnit.DAYS.between(minDate, maxDate).toInt() + 1
     Layout(
         content = {
@@ -181,8 +275,6 @@ fun Schedule(
               }
         },
         modifier = modifier
-            .verticalScroll(rememberScrollState())
-            .horizontalScroll(rememberScrollState())
     ) { measureables, constraints ->
         val height = hourHeight.roundToPx() * 24
         val width = dayWidth.roundToPx() * numDays
