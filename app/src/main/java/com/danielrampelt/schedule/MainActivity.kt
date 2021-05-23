@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +29,7 @@ import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.danielrampelt.schedule.ui.theme.WeekScheduleTheme
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -114,6 +116,27 @@ private val sampleEvents = listOf(
         end = LocalDateTime.parse("2021-05-18T15:00:00"),
         description = "In this Keynote, Chet Haase, Dan Sandler, and Romain Guy discuss the latest Android features and enhancements for developers.",
     ),
+    Event(
+        name = "What's new in Machine Learning",
+        color = Color(0xFFF4BFDB),
+        start = LocalDateTime.parse("2021-05-19T09:30:00"),
+        end = LocalDateTime.parse("2021-05-19T11:00:00"),
+        description = "Learn about the latest and greatest in ML from Google. We’ll cover what’s available to developers when it comes to creating, understanding, and deploying models for a variety of different applications.",
+    ),
+    Event(
+        name = "What's new in Material Design",
+        color = Color(0xFF6DD3CE),
+        start = LocalDateTime.parse("2021-05-19T11:00:00"),
+        end = LocalDateTime.parse("2021-05-19T12:15:00"),
+        description = "Learn about the latest design improvements to help you build personal dynamic experiences with Material Design.",
+    ),
+    Event(
+        name = "Jetpack Compose Basics",
+        color = Color(0xFF1B998B),
+        start = LocalDateTime.parse("2021-05-20T12:00:00"),
+        end = LocalDateTime.parse("2021-05-20T13:00:00"),
+        description = "This Workshop will take you through the basics of building your first app with Jetpack Compose, Android's new modern UI toolkit that simplifies and accelerates UI development on Android.",
+    ),
 )
 
 class EventsProvider : PreviewParameterProvider<Event> {
@@ -143,8 +166,12 @@ fun Schedule(
     events: List<Event>,
     modifier: Modifier = Modifier,
     eventContent: @Composable (event: Event) -> Unit = { BasicEvent(event = it) },
+    minDate: LocalDate = events.minByOrNull(Event::start)!!.start.toLocalDate(),
+    maxDate: LocalDate = events.maxByOrNull(Event::end)!!.end.toLocalDate(),
 ) {
     val hourHeight = 64.dp
+    val dayWidth = 256.dp
+    val numDays = ChronoUnit.DAYS.between(minDate, maxDate).toInt() + 1
     Layout(
         content = {
               events.sortedBy(Event::start).forEach { event ->
@@ -155,20 +182,24 @@ fun Schedule(
         },
         modifier = modifier
             .verticalScroll(rememberScrollState())
+            .horizontalScroll(rememberScrollState())
     ) { measureables, constraints ->
         val height = hourHeight.roundToPx() * 24
+        val width = dayWidth.roundToPx() * numDays
         val placeablesWithEvents = measureables.map { measurable ->
             val event = measurable.parentData as Event
             val eventDurationMinutes = ChronoUnit.MINUTES.between(event.start, event.end)
             val eventHeight = ((eventDurationMinutes / 60f) * hourHeight.toPx()).roundToInt()
-            val placeable = measurable.measure(constraints.copy(minHeight = eventHeight, maxHeight = eventHeight))
+            val placeable = measurable.measure(constraints.copy(minWidth = dayWidth.roundToPx(), maxWidth = dayWidth.roundToPx(), minHeight = eventHeight, maxHeight = eventHeight))
             Pair(placeable, event)
         }
-        layout(constraints.maxWidth, height) {
+        layout(width, height) {
             placeablesWithEvents.forEach { (placeable, event) ->
                 val eventOffsetMinutes = ChronoUnit.MINUTES.between(LocalTime.MIN, event.start.toLocalTime())
                 val eventY = ((eventOffsetMinutes / 60f) * hourHeight.toPx()).roundToInt()
-                placeable.place(0, eventY)
+                val eventOffsetDays = ChronoUnit.DAYS.between(minDate, event.start.toLocalDate()).toInt()
+                val eventX = eventOffsetDays * dayWidth.roundToPx()
+                placeable.place(eventX, eventY)
             }
         }
     }
