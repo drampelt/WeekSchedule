@@ -27,6 +27,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.ParentDataModifier
@@ -333,6 +335,7 @@ fun BasicSchedule(
     hourHeight: Dp,
 ) {
     val numDays = ChronoUnit.DAYS.between(minDate, maxDate).toInt() + 1
+    val dividerColor = if (MaterialTheme.colors.isLight) Color.LightGray else Color.DarkGray
     Layout(
         content = {
               events.sortedBy(Event::start).forEach { event ->
@@ -342,6 +345,24 @@ fun BasicSchedule(
               }
         },
         modifier = modifier
+            .drawBehind {
+                repeat(23) {
+                    drawLine(
+                        dividerColor,
+                        start = Offset(0f, (it + 1) * hourHeight.toPx()),
+                        end = Offset(size.width, (it + 1) * hourHeight.toPx()),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+                repeat(numDays - 1) {
+                    drawLine(
+                        dividerColor,
+                        start = Offset((it + 1) * dayWidth.toPx(), 0f),
+                        end = Offset((it + 1) * dayWidth.toPx(), size.height),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+            }
     ) { measureables, constraints ->
         val height = hourHeight.roundToPx() * 24
         val width = dayWidth.roundToPx() * numDays
