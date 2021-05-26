@@ -8,8 +8,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
@@ -20,10 +22,16 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.ParentDataModifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -220,6 +228,53 @@ fun ScheduleHeaderPreview() {
     }
 }
 
+private val HourFormatter = DateTimeFormatter.ofPattern("h a")
+
+@Composable
+fun BasicSidebarLabel(
+    time: LocalTime,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = time.format(HourFormatter),
+        modifier = modifier
+            .fillMaxHeight()
+            .padding(4.dp)
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun BasicSidebarLabelPreview() {
+    WeekScheduleTheme {
+        BasicSidebarLabel(time = LocalTime.NOON, Modifier.sizeIn(maxHeight = 64.dp))
+    }
+}
+
+@Composable
+fun ScheduleSidebar(
+    hourHeight: Dp,
+    modifier: Modifier = Modifier,
+    label: @Composable (time: LocalTime) -> Unit = { BasicSidebarLabel(time = it) },
+) {
+    Column(modifier = modifier) {
+        val startTime = LocalTime.MIN
+        repeat(24) { i ->
+            Box(modifier = Modifier.height(hourHeight)) {
+                label(startTime.plusHours(i.toLong()))
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun ScheduleSidebarPreview() {
+    WeekScheduleTheme {
+        ScheduleSidebar(hourHeight = 64.dp)
+    }
+}
+
 @Composable
 fun Schedule(
     events: List<Event>,
@@ -230,8 +285,10 @@ fun Schedule(
     maxDate: LocalDate = events.maxByOrNull(Event::end)!!.end.toLocalDate(),
 ) {
     val dayWidth = 256.dp
+    val hourHeight = 64.dp
     val verticalScrollState = rememberScrollState()
     val horizontalScrollState = rememberScrollState()
+    var sidebarWidth by remember { mutableStateOf(0) }
     Column(modifier = modifier) {
         ScheduleHeader(
             minDate = minDate,
@@ -239,19 +296,29 @@ fun Schedule(
             dayWidth = dayWidth,
             dayHeader = dayHeader,
             modifier = Modifier
+                .padding(start = with(LocalDensity.current) { sidebarWidth.toDp() })
                 .horizontalScroll(horizontalScrollState)
         )
-        BasicSchedule(
-            events = events,
-            eventContent = eventContent,
-            minDate = minDate,
-            maxDate = maxDate,
-            dayWidth = dayWidth,
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(verticalScrollState)
-                .horizontalScroll(horizontalScrollState)
-        )
+        Row(modifier = Modifier.weight(1f)) {
+            ScheduleSidebar(
+                hourHeight = hourHeight,
+                modifier = Modifier
+                    .verticalScroll(verticalScrollState)
+                    .onGloballyPositioned { sidebarWidth = it.size.width }
+            )
+            BasicSchedule(
+                events = events,
+                eventContent = eventContent,
+                minDate = minDate,
+                maxDate = maxDate,
+                dayWidth = dayWidth,
+                hourHeight = hourHeight,
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(verticalScrollState)
+                    .horizontalScroll(horizontalScrollState)
+            )
+        }
     }
 }
 
@@ -263,8 +330,8 @@ fun BasicSchedule(
     minDate: LocalDate = events.minByOrNull(Event::start)!!.start.toLocalDate(),
     maxDate: LocalDate = events.maxByOrNull(Event::end)!!.end.toLocalDate(),
     dayWidth: Dp,
+    hourHeight: Dp,
 ) {
-    val hourHeight = 64.dp
     val numDays = ChronoUnit.DAYS.between(minDate, maxDate).toInt() + 1
     Layout(
         content = {
