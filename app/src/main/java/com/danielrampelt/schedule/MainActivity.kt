@@ -73,18 +73,46 @@ data class Event(
     val description: String? = null,
 )
 
+inline class SplitType private constructor(val value: Int) {
+    companion object {
+        val None = SplitType(0)
+        val Start = SplitType(1)
+        val End = SplitType(2)
+        val Both = SplitType(3)
+    }
+}
+
+data class PositionedEvent(
+    val event: Event,
+    val splitType: SplitType,
+    val date: LocalDate,
+    val start: LocalTime,
+    val end: LocalTime,
+)
+
 val EventTimeFormatter = DateTimeFormatter.ofPattern("h:mm a")
 
 @Composable
 fun BasicEvent(
-    event: Event,
+    positionedEvent: PositionedEvent,
     modifier: Modifier = Modifier,
 ) {
+    val event = positionedEvent.event
+    val topRadius = if (positionedEvent.splitType == SplitType.Start || positionedEvent.splitType == SplitType.Both) 0.dp else 4.dp
+    val bottomRadius = if (positionedEvent.splitType == SplitType.End || positionedEvent.splitType == SplitType.Both) 0.dp else 4.dp
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(end = 2.dp, bottom = 2.dp)
-            .background(event.color, shape = RoundedCornerShape(4.dp))
+            .padding(end = 2.dp, bottom = if (positionedEvent.splitType == SplitType.End) 0.dp else 2.dp)
+            .background(
+                event.color,
+                shape = RoundedCornerShape(
+                    topStart = topRadius,
+                    topEnd = topRadius,
+                    bottomEnd = bottomRadius,
+                    bottomStart = bottomRadius,
+                )
+            )
             .padding(4.dp)
     ) {
         Text(
@@ -142,7 +170,7 @@ private val sampleEvents = listOf(
         name = "What's new in Material Design",
         color = Color(0xFF6DD3CE),
         start = LocalDateTime.parse("2021-05-19T11:00:00"),
-        end = LocalDateTime.parse("2021-05-19T12:15:00"),
+        end = LocalDateTime.parse("2021-05-20T11:45:00"),
         description = "Learn about the latest design improvements to help you build personal dynamic experiences with Material Design.",
     ),
     Event(
@@ -164,17 +192,20 @@ fun EventPreview(
     @PreviewParameter(EventsProvider::class) event: Event,
 ) {
     WeekScheduleTheme {
-        BasicEvent(event, modifier = Modifier.sizeIn(maxHeight = 64.dp))
+        BasicEvent(
+            PositionedEvent(event, SplitType.None, event.start.toLocalDate(), event.start.toLocalTime(), event.end.toLocalTime()),
+            modifier = Modifier.sizeIn(maxHeight = 64.dp)
+        )
     }
 }
 
 private class EventDataModifier(
-    val event: Event,
+    val positionedEvent: PositionedEvent,
 ) : ParentDataModifier {
-    override fun Density.modifyParentData(parentData: Any?) = event
+    override fun Density.modifyParentData(parentData: Any?) = positionedEvent
 }
 
-private fun Modifier.eventData(event: Event) = this.then(EventDataModifier(event))
+private fun Modifier.eventData(positionedEvent: PositionedEvent) = this.then(EventDataModifier(positionedEvent))
 
 private val DayFormatter = DateTimeFormatter.ofPattern("EE, MMM d")
 
@@ -277,11 +308,37 @@ fun ScheduleSidebarPreview() {
     }
 }
 
+private fun splitEvents(events: List<Event>): List<PositionedEvent> {
+    return events
+        .map { event ->
+            val startDate = event.start.toLocalDate()
+            val endDate = event.end.toLocalDate()
+            if (startDate == endDate) {
+                listOf(PositionedEvent(event, SplitType.None, event.start.toLocalDate(), event.start.toLocalTime(), event.end.toLocalTime()))
+            } else {
+                val days = ChronoUnit.DAYS.between(startDate, endDate)
+                val splitEvents = mutableListOf<PositionedEvent>()
+                for (i in 0..days) {
+                    val date = startDate.plusDays(i)
+                    splitEvents += PositionedEvent(
+                        event,
+                        splitType = if (date == startDate) SplitType.End else if (date == endDate) SplitType.Start else SplitType.Both,
+                        date = date,
+                        start = if (date == startDate) event.start.toLocalTime() else LocalTime.MIN,
+                        end = if (date == endDate) event.end.toLocalTime() else LocalTime.MAX,
+                    )
+                }
+                splitEvents
+            }
+        }
+        .flatten()
+}
+
 @Composable
 fun Schedule(
     events: List<Event>,
     modifier: Modifier = Modifier,
-    eventContent: @Composable (event: Event) -> Unit = { BasicEvent(event = it) },
+    eventContent: @Composable (positionedEvent: PositionedEvent) -> Unit = { BasicEvent(positionedEvent = it) },
     dayHeader: @Composable (day: LocalDate) -> Unit = { BasicDayHeader(day = it) },
     minDate: LocalDate = events.minByOrNull(Event::start)!!.start.toLocalDate(),
     maxDate: LocalDate = events.maxByOrNull(Event::end)!!.end.toLocalDate(),
@@ -328,7 +385,7 @@ fun Schedule(
 fun BasicSchedule(
     events: List<Event>,
     modifier: Modifier = Modifier,
-    eventContent: @Composable (event: Event) -> Unit = { BasicEvent(event = it) },
+    eventContent: @Composable (positionedEvent: PositionedEvent) -> Unit = { BasicEvent(positionedEvent = it) },
     minDate: LocalDate = events.minByOrNull(Event::start)!!.start.toLocalDate(),
     maxDate: LocalDate = events.maxByOrNull(Event::end)!!.end.toLocalDate(),
     dayWidth: Dp,
@@ -336,11 +393,12 @@ fun BasicSchedule(
 ) {
     val numDays = ChronoUnit.DAYS.between(minDate, maxDate).toInt() + 1
     val dividerColor = if (MaterialTheme.colors.isLight) Color.LightGray else Color.DarkGray
+    val splitEvents = remember(events) { splitEvents(events.sortedBy(Event::start)) }
     Layout(
         content = {
-              events.sortedBy(Event::start).forEach { event ->
-                  Box(modifier = Modifier.eventData(event)) {
-                      eventContent(event)
+              splitEvents.forEach { splitEvent ->
+                  Box(modifier = Modifier.eventData(splitEvent)) {
+                      eventContent(splitEvent)
                   }
               }
         },
@@ -367,17 +425,17 @@ fun BasicSchedule(
         val height = hourHeight.roundToPx() * 24
         val width = dayWidth.roundToPx() * numDays
         val placeablesWithEvents = measureables.map { measurable ->
-            val event = measurable.parentData as Event
-            val eventDurationMinutes = ChronoUnit.MINUTES.between(event.start, event.end)
+            val splitEvent = measurable.parentData as PositionedEvent
+            val eventDurationMinutes = ChronoUnit.MINUTES.between(splitEvent.start, splitEvent.end)
             val eventHeight = ((eventDurationMinutes / 60f) * hourHeight.toPx()).roundToInt()
             val placeable = measurable.measure(constraints.copy(minWidth = dayWidth.roundToPx(), maxWidth = dayWidth.roundToPx(), minHeight = eventHeight, maxHeight = eventHeight))
-            Pair(placeable, event)
+            Pair(placeable, splitEvent)
         }
         layout(width, height) {
-            placeablesWithEvents.forEach { (placeable, event) ->
-                val eventOffsetMinutes = ChronoUnit.MINUTES.between(LocalTime.MIN, event.start.toLocalTime())
+            placeablesWithEvents.forEach { (placeable, splitEvent) ->
+                val eventOffsetMinutes = ChronoUnit.MINUTES.between(LocalTime.MIN, splitEvent.start)
                 val eventY = ((eventOffsetMinutes / 60f) * hourHeight.toPx()).roundToInt()
-                val eventOffsetDays = ChronoUnit.DAYS.between(minDate, event.start.toLocalDate()).toInt()
+                val eventOffsetDays = ChronoUnit.DAYS.between(minDate, splitEvent.date).toInt()
                 val eventX = eventOffsetDays * dayWidth.roundToPx()
                 placeable.place(eventX, eventY)
             }
