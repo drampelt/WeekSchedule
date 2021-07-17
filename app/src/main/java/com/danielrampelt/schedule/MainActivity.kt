@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -109,7 +110,10 @@ fun BasicEvent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(end = 2.dp, bottom = if (positionedEvent.splitType == SplitType.End) 0.dp else 2.dp)
+            .padding(
+                end = 2.dp,
+                bottom = if (positionedEvent.splitType == SplitType.End) 0.dp else 2.dp
+            )
             .clipToBounds()
             .background(
                 event.color,
@@ -422,6 +426,14 @@ private fun arrangeEvents(events: List<PositionedEvent>): List<PositionedEvent> 
     return positionedEvents
 }
 
+sealed class ScheduleSize {
+    class FixedSize(val size: Dp) : ScheduleSize()
+    class FixedCount(val count: Float) : ScheduleSize() {
+        constructor(count: Int) : this(count.toFloat())
+    }
+    class Adaptive(val minSize: Dp) : ScheduleSize()
+}
+
 @Composable
 fun Schedule(
     events: List<Event>,
@@ -433,48 +445,65 @@ fun Schedule(
     maxDate: LocalDate = events.maxByOrNull(Event::end)?.end?.toLocalDate() ?: LocalDate.now(),
     minTime: LocalTime = LocalTime.MIN,
     maxTime: LocalTime = LocalTime.MAX,
+    daySize: ScheduleSize = ScheduleSize.FixedSize(256.dp),
+    hourSize: ScheduleSize = ScheduleSize.FixedSize(64.dp),
 ) {
-    val dayWidth = 256.dp
-    val hourHeight = 64.dp
+    val numDays = ChronoUnit.DAYS.between(minDate, maxDate).toInt() + 1
+    val numMinutes = ChronoUnit.MINUTES.between(minTime, maxTime).toInt() + 1
+    val numHours = numMinutes.toFloat() / 60f
     val verticalScrollState = rememberScrollState()
     val horizontalScrollState = rememberScrollState()
     var sidebarWidth by remember { mutableStateOf(0) }
-    Column(modifier = modifier) {
-        ScheduleHeader(
-            minDate = minDate,
-            maxDate = maxDate,
-            dayWidth = dayWidth,
-            dayHeader = dayHeader,
-            modifier = Modifier
-                .padding(start = with(LocalDensity.current) { sidebarWidth.toDp() })
-                .horizontalScroll(horizontalScrollState)
-        )
-        Row(modifier = Modifier
-            .weight(1f)
-            .align(Alignment.Start)) {
-            ScheduleSidebar(
-                hourHeight = hourHeight,
-                minTime = minTime,
-                maxTime = maxTime,
-                label = timeLabel,
-                modifier = Modifier
-                    .verticalScroll(verticalScrollState)
-                    .onGloballyPositioned { sidebarWidth = it.size.width }
-            )
-            BasicSchedule(
-                events = events,
-                eventContent = eventContent,
+    var headerHeight by remember { mutableStateOf(0) }
+    BoxWithConstraints(modifier = modifier) {
+        val dayWidth: Dp = when (daySize) {
+            is ScheduleSize.FixedSize -> daySize.size
+            is ScheduleSize.FixedCount -> with(LocalDensity.current) { ((constraints.maxWidth - sidebarWidth) / daySize.count).toDp() }
+            is ScheduleSize.Adaptive -> with(LocalDensity.current) { maxOf(((constraints.maxWidth - sidebarWidth) / numDays).toDp(), daySize.minSize) }
+        }
+        val hourHeight: Dp = when (hourSize) {
+            is ScheduleSize.FixedSize -> hourSize.size
+            is ScheduleSize.FixedCount -> with(LocalDensity.current) { ((constraints.maxHeight - headerHeight) / hourSize.count).toDp() }
+            is ScheduleSize.Adaptive -> with(LocalDensity.current) { maxOf(((constraints.maxHeight - headerHeight) / numHours).toDp(), hourSize.minSize) }
+        }
+        Column(modifier = modifier) {
+            ScheduleHeader(
                 minDate = minDate,
                 maxDate = maxDate,
-                minTime = minTime,
-                maxTime = maxTime,
                 dayWidth = dayWidth,
-                hourHeight = hourHeight,
+                dayHeader = dayHeader,
                 modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(verticalScrollState)
+                    .padding(start = with(LocalDensity.current) { sidebarWidth.toDp() })
                     .horizontalScroll(horizontalScrollState)
+                    .onGloballyPositioned { headerHeight = it.size.height }
             )
+            Row(modifier = Modifier
+                .weight(1f)
+                .align(Alignment.Start)) {
+                ScheduleSidebar(
+                    hourHeight = hourHeight,
+                    minTime = minTime,
+                    maxTime = maxTime,
+                    label = timeLabel,
+                    modifier = Modifier
+                        .verticalScroll(verticalScrollState)
+                        .onGloballyPositioned { sidebarWidth = it.size.width }
+                )
+                BasicSchedule(
+                    events = events,
+                    eventContent = eventContent,
+                    minDate = minDate,
+                    maxDate = maxDate,
+                    minTime = minTime,
+                    maxTime = maxTime,
+                    dayWidth = dayWidth,
+                    hourHeight = hourHeight,
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(verticalScrollState)
+                        .horizontalScroll(horizontalScrollState)
+                )
+            }
         }
     }
 }
